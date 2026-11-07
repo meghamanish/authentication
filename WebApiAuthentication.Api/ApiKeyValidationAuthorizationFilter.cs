@@ -1,11 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
-using System.Diagnostics;
+using WebApiAuthentication.Api.Utilities;
 
 namespace WebApiAuthentication.Api;
 
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]
-public class ApiKeyValidationAuthorizationFilter : Attribute, IAuthorizationFilter
+public sealed class ApiKeyValidationAuthorizationFilter : Attribute, IAuthorizationFilter
 {
     public void OnAuthorization(AuthorizationFilterContext context)
     {
@@ -14,25 +14,32 @@ public class ApiKeyValidationAuthorizationFilter : Attribute, IAuthorizationFilt
             context.Result = new UnauthorizedResult();
         }
     }
-
-    private bool IsValidApiKey(AuthorizationFilterContext context)
+        
+    private static bool IsValidApiKey(AuthorizationFilterContext context)
     {
-        var config = context.HttpContext.RequestServices.GetRequiredService<IConfiguration>();
-        var validApiKey = config.GetValue<string>("Authentication:ApiKey");
+        var services = context.HttpContext.RequestServices;
+        var config = services.GetRequiredService<IConfiguration>();
+        var encryption = services.GetRequiredService<IEncryption>();
 
-        if (string.IsNullOrEmpty(validApiKey))
+        var storedApiKeyHash = config.GetValue<string>("Authentication:ApiKeyHash");
+        if (string.IsNullOrWhiteSpace(storedApiKeyHash))
         {
-            throw new KeyNotFoundException("ApiKey not found in configuration");
+            throw new KeyNotFoundException("ApiKey hash not found in configuration");
         }
 
-        if (!context.HttpContext.Request.Headers.TryGetValue("X-ApiKey", out var extractedApiKey))
+        if (!context.HttpContext.Request.Headers.TryGetValue("X-ApiKey", out var extractedApiKey)
+            && !context.HttpContext.Request.Query.TryGetValue("X-ApiKey", out extractedApiKey))
         {
-            if (!context.HttpContext.Request.Query.TryGetValue("X-ApiKey", out extractedApiKey))
-            {
-                return false;
-            }
+            return false;
         }
 
-        return true;
+        var providedApiKey = extractedApiKey.ToString();
+        if (string.IsNullOrWhiteSpace(providedApiKey))
+        {
+            return false;
+        }
+
+        var providedHash = encryption.GetHash(providedApiKey);
+        return string.Equals(providedHash, storedApiKeyHash, StringComparison.Ordinal);
     }
 }

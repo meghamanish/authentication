@@ -1,9 +1,10 @@
 using WebApiAuthentication.Api;
+using WebApiAuthentication.Api.Utilities;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-
+builder.Services.AddSingleton<IEncryption, Encryption>();
 builder.Services.AddControllers();
 
 var app = builder.Build();
